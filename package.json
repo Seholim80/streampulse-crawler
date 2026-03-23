@@ -1,0 +1,23 @@
+{
+  "name": "streampulse-crawler",
+  "version": "1.0.0",
+  "description": "StreamPulse 데이터 수집기 - Chzzk & SOOP API Crawler",
+  "type": "module",
+  "scripts": {
+    "collect": "tsx src/index.ts",
+    "collect:chzzk": "tsx src/index.ts --platform chzzk",
+    "collect:soop": "tsx src/index.ts --platform soop",
+    "test": "tsx src/index.ts --dry-run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

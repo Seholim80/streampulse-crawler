@@ -1,0 +1,74 @@
+# StreamPulse 데이터 수집 - GitHub Actions
+# 30분마다 자동 실행 + push 시 실행 + 수동 실행 가능
+#
+# 필수 시크릿:
+#   SUPABASE_URL          - Supabase 프로젝트 URL
+#   SUPABASE_SERVICE_KEY  - Supabase service_role 시크릿 키
+
+name: StreamPulse Collect
+
+on:
+  # 30분마다 자동 실행
+  schedule:
+    - cron: '*/30 * * * *'  # 매 30분
+  
+  # 수동 실행 (Actions 탭에서 "Run workflow" 클릭)
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: '수집 플랫폼'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - chzzk
+          - soop
+  
+  # 코드 push 시 실행 (테스트용)
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - '.github/workflows/collect.yml'
+
+# 동시 실행 방지 (이전 실행이 안 끝났으면 새 실행 취소)
+concurrency:
+  group: streampulse-collect
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # 최대 10분 (보통 1-2분이면 충분)
+
+    steps:
+      - name: 📥 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 🟢 Node.js 20 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 의존성 설치
+        run: npm ci
+
+      - name: 🚀 데이터 수집 실행
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          PLATFORM="${{ github.event.inputs.platform || 'all' }}"
+          
+          if [ "$PLATFORM" = "all" ]; then
+            npm run collect
+          else
+            npm run collect -- --platform $PLATFORM
+          fi
+
+      - name: 📊 결과 요약
+        if: always()
+        run: echo "수집 완료 - $(date '+%Y-%m-%d %H:%M:%S KST' -d '+9 hours')"
