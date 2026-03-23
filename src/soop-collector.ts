@@ -185,15 +185,8 @@ export async function collectSoop(): Promise<{
   // 첫 번째 방송의 필드를 로깅 (디버깅용)
   if (rawBroads.length > 0) {
     const sample = rawBroads[0];
-    console.log(`  🔍 샘플 데이터:`, JSON.stringify({
-      user_id: sample.user_id,
-      station_name: sample.station_name,
-      broad_title: sample.broad_title?.substring(0, 30),
-      total_view_cnt: sample.total_view_cnt,
-      pc_view_cnt: sample.pc_view_cnt,
-      m_current_view_cnt: sample.m_current_view_cnt,
-      broad_cate_name: sample.broad_cate_name,
-    }));
+console.log(`  🔍 샘플 전체 키:`, Object.keys(sample).join(', '));
+    console.log(`  🔍 샘플 데이터:`, JSON.stringify(sample).substring(0, 500));
   }
 
   if (rawBroads.length === 0) {
