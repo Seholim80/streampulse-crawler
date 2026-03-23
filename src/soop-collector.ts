@@ -203,7 +203,6 @@ export async function collectSoop(): Promise<{
       pc_view_cnt: sample.pc_view_cnt,
       m_current_view_cnt: sample.m_current_view_cnt,
     }));
-    }));
   }
 
   if (rawBroads.length === 0) {
