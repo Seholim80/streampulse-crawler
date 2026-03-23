@@ -68,6 +68,10 @@ async function fetchBroadList(page: number = 1): Promise<SoopRealBroad[]> {
       orderType: 'view_cnt',
       pageNo: String(page),
       lang: 'ko_KR',
+      szType: 'json',
+      type: 'cate',
+      acttype: 'live',
+      mode: 'landing',
     });
 
     const res = await fetch(`${url}?${params}`, { headers: HEADERS });
@@ -122,7 +126,7 @@ async function fetchAllBroadList(): Promise<SoopRealBroad[]> {
     allBroads.push(...broads);
     
     // 결과가 적으면 마지막 페이지
-    if (broads.length < 60) break;
+    if (broads.length < 50) break;
     
     await delay(600);
   }
