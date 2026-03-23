@@ -1,19 +1,16 @@
 /**
- * SOOP(숲) 데이터 수집기
+ * SOOP(숲) 데이터 수집기 v2
  * 
- * 참고: HO-Silverplate/SOOP_APIs (비공식 API 정리 문서)
- * 참고: VRECORD/soop-api (Node.js 비공식 라이브러리)
+ * 수정: HO-Silverplate/SOOP_APIs 문서 기반으로 정확한 필드명 사용
  * 
- * 사용 API 엔드포인트:
- * - POST https://live.sooplive.co.kr/afreeca/player_live_api.php
- *   → 개별 스트리머 라이브 상세 정보
- * - GET  https://live.sooplive.co.kr/api/main_broad_list_api.php
- *   → 메인 방송 목록 (전체 라이브)
- * - GET  https://live.sooplive.co.kr/api/searchAll.php
- *   → 방송 검색
+ * 핵심 엔드포인트:
+ *   POST https://live.sooplive.co.kr/afreeca/player_live_api.php → 개별 방송 상세
+ *   GET  https://live.sooplive.co.kr/api/main_broad_list_api.php → 방송 목록 (REAL_BROAD 배열)
  * 
- * 주의: SOOP 한국 서버(live.sooplive.co.kr)만 접근 가능
- *       글로벌(live.afreecatv.com)은 다른 엔드포인트
+ * 시청자수 필드:
+ *   - total_view_cnt: PC + 모바일 합산 시청자 (숫자 문자열)
+ *   - pc_view_cnt: PC 시청자
+ *   - m_current_view_cnt: 모바일 시청자
  */
 
 import type { LiveSnapshot, CategorySnapshot } from './supabase-client.js';
@@ -22,9 +19,8 @@ const SOOP_BASE = 'https://live.sooplive.co.kr';
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  'Origin': 'https://play.sooplive.co.kr',
-  'Referer': 'https://play.sooplive.co.kr/',
-  'Accept': 'application/json',
+  'Referer': 'https://www.sooplive.co.kr/',
+  'Accept': 'application/json, text/plain, */*',
 };
 
 function delay(ms: number) {
@@ -32,40 +28,39 @@ function delay(ms: number) {
 }
 
 // ============================================
-// SOOP API 타입 정의
+// SOOP API 타입 (HO-Silverplate 문서 기반)
 // ============================================
 
-interface SoopBroadItem {
-  user_id: string;          // 스트리머 ID (bjId)
-  user_nick: string;        // 닉네임
-  station_name?: string;    // 방송국 이름
-  broad_no: string;         // 방송 번호
-  broad_title: string;      // 방송 제목
-  current_sum_viewer: string | number;  // 현재 시청자 수
-  total_view_cnt?: string | number;     // 누적 시청자
-  broad_cate_no?: string;   // 카테고리 코드
-  broad_cate_nm?: string;   // 카테고리 이름 (없을 수 있음)
-  category_name?: string;   // 카테고리 이름 (대체 필드)
-  broad_start?: string;     // 방송 시작 시간
-  profile_image?: string;   // 프로필 이미지
+interface SoopRealBroad {
+  user_id: string;
+  station_name: string;
+  broad_no: string;
+  broad_title: string;
+  broad_cate_name: string;    // 카테고리 이름 (직접 제공됨!)
+  broad_start: string;
+  total_view_cnt: string;     // PC+모바일 합산 시청자 (핵심!)
+  pc_view_cnt: string;        // PC 시청자
+  m_current_view_cnt: string; // 모바일 시청자
+  broad_bps: string;
+  broad_img: string;
+  is_password: string;
+  parent_broad_no: string;
+  rank: string;
 }
 
-interface SoopBroadListResponse {
-  broad: SoopBroadItem[];
-  total_cnt?: number;
+interface SoopListResponse {
+  RESULT: string;
+  TOTAL_CNT: string;
+  HAS_MORE_LIST: boolean;
+  REAL_BROAD: SoopRealBroad[];
 }
 
 // ============================================
-// API 요청 함수
+// API 요청
 // ============================================
 
-/**
- * SOOP 메인 방송 목록 API
- * 카테고리별 전체 라이브 방송을 페이징으로 수집
- */
-async function fetchBroadList(page: number = 1): Promise<SoopBroadItem[]> {
+async function fetchBroadList(page: number = 1): Promise<SoopRealBroad[]> {
   try {
-    // SOOP의 방송 목록 API - 전체 방송 리스트
     const url = `${SOOP_BASE}/api/main_broad_list_api.php`;
     const params = new URLSearchParams({
       selectType: 'action',
@@ -78,70 +73,48 @@ async function fetchBroadList(page: number = 1): Promise<SoopBroadItem[]> {
     const res = await fetch(`${url}?${params}`, { headers: HEADERS });
     
     if (!res.ok) {
-      console.error(`❌ SOOP broad list ${res.status}`);
+      console.error(`  ❌ SOOP API ${res.status}`);
       return [];
     }
 
-    const data = await res.json();
-    
-    // 응답 형태에 따라 파싱
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error('  ❌ SOOP JSON 파싱 실패');
+      return [];
+    }
+
+    // API 응답 구조: { RESULT, TOTAL_CNT, REAL_BROAD: [...] }
+    if (data.REAL_BROAD && Array.isArray(data.REAL_BROAD)) {
+      console.log(`  📡 page ${page}: REAL_BROAD ${data.REAL_BROAD.length}개 (TOTAL_CNT: ${data.TOTAL_CNT || '?'})`);
+      return data.REAL_BROAD;
+    }
+
+    // 혹시 다른 형태일 경우 폴백
     if (Array.isArray(data)) {
-      return data as SoopBroadItem[];
+      console.log(`  📡 page ${page}: array ${data.length}개`);
+      return data;
     }
-    if (data?.broad && Array.isArray(data.broad)) {
-      return data.broad as SoopBroadItem[];
+    if (data.broad && Array.isArray(data.broad)) {
+      console.log(`  📡 page ${page}: broad ${data.broad.length}개`);
+      return data.broad;
     }
-    if (data?.data && Array.isArray(data.data)) {
-      return data.data as SoopBroadItem[];
-    }
-    
+
+    console.warn(`  ⚠️ page ${page}: 알 수 없는 응답 구조`, Object.keys(data));
     return [];
   } catch (err) {
-    console.error('❌ SOOP broad list 요청 실패:', err);
+    console.error('  ❌ SOOP 요청 실패:', err);
     return [];
   }
 }
 
-/**
- * SOOP 카테고리별 방송 목록 수집
- * 게임, 토크, 먹방 등 주요 카테고리별 수집
- */
-async function fetchCategoryBroads(categoryNo: string): Promise<SoopBroadItem[]> {
-  try {
-    const url = `${SOOP_BASE}/api/main_broad_list_api.php`;
-    const params = new URLSearchParams({
-      selectType: 'action',
-      selectValue: categoryNo,
-      orderType: 'view_cnt',
-      pageNo: '1',
-      lang: 'ko_KR',
-    });
-
-    const res = await fetch(`${url}?${params}`, { headers: HEADERS });
-    
-    if (!res.ok) return [];
-    
-    const data = await res.json();
-    if (Array.isArray(data)) return data;
-    if (data?.broad) return data.broad;
-    if (data?.data) return data.data;
-    
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * SOOP 라이브 전체 목록 수집 (다중 페이지)
- */
-async function fetchAllBroadList(): Promise<SoopBroadItem[]> {
-  const allBroads: SoopBroadItem[] = [];
-  const MAX_PAGES = 20; // 안전장치
+async function fetchAllBroadList(): Promise<SoopRealBroad[]> {
+  const allBroads: SoopRealBroad[] = [];
+  const MAX_PAGES = 30;
 
   for (let page = 1; page <= MAX_PAGES; page++) {
-    console.log(`  📡 SOOP 방송 목록 수집 중... page=${page}`);
-    
     const broads = await fetchBroadList(page);
     
     if (broads.length === 0) break;
@@ -149,92 +122,45 @@ async function fetchAllBroadList(): Promise<SoopBroadItem[]> {
     allBroads.push(...broads);
     
     // 결과가 적으면 마지막 페이지
-    if (broads.length < 40) break;
+    if (broads.length < 60) break;
     
-    await delay(800); // SOOP은 좀 더 보수적으로
+    await delay(600);
   }
 
   return allBroads;
 }
 
-/**
- * player_live_api.php를 통한 개별 스트리머 라이브 정보 조회
- * (대량 수집에는 비효율적이므로 보조용)
- */
-async function fetchLiveDetail(streamerId: string): Promise<SoopBroadItem | null> {
-  try {
-    const url = `${SOOP_BASE}/afreeca/player_live_api.php`;
-    
-    const body = new URLSearchParams({
-      bid: streamerId,
-      type: 'live',
-      from_api: '0',
-      mode: 'landing',
-      player_type: 'html5',
-    });
+// ============================================
+// 시청자수 파싱 헬퍼
+// ============================================
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        ...HEADERS,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: body.toString(),
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    
-    // RESULT: 1 = 방송 중, 0 = 방송 종료
-    if (data?.CHANNEL?.RESULT !== 1) return null;
-
-    const ch = data.CHANNEL;
-    return {
-      user_id: streamerId,
-      user_nick: ch.BJNICK || streamerId,
-      broad_no: String(ch.BNO || ''),
-      broad_title: ch.TITLE || '',
-      current_sum_viewer: ch.CTUSER || 0,
-      broad_cate_no: ch.CATE || '',
-      broad_start: '',
-    };
-  } catch {
-    return null;
+function parseViewerCount(broad: SoopRealBroad): number {
+  // 1순위: total_view_cnt (PC + 모바일 합산)
+  if (broad.total_view_cnt) {
+    const v = parseInt(String(broad.total_view_cnt), 10);
+    if (!isNaN(v) && v > 0) return v;
   }
+  
+  // 2순위: pc_view_cnt + m_current_view_cnt 합산
+  const pc = parseInt(String(broad.pc_view_cnt || '0'), 10) || 0;
+  const mobile = parseInt(String(broad.m_current_view_cnt || '0'), 10) || 0;
+  if (pc + mobile > 0) return pc + mobile;
+
+  // 3순위: 다른 가능한 필드 시도
+  const anyField = (broad as any).current_sum_viewer 
+    || (broad as any).view_cnt 
+    || (broad as any).current_view_cnt
+    || (broad as any).viewer_count;
+  if (anyField) {
+    const v = parseInt(String(anyField), 10);
+    if (!isNaN(v) && v > 0) return v;
+  }
+
+  return 0;
 }
 
 // ============================================
-// 카테고리 코드 매핑 (SOOP 주요 카테고리)
-// ============================================
-
-const SOOP_CATEGORY_MAP: Record<string, string> = {
-  '00040000': '게임',
-  '00040001': '리그 오브 레전드',
-  '00040131': 'VRChat',
-  '00040018': '마인크래프트',
-  '00040021': '배틀그라운드',
-  '00040068': '오버워치',
-  '00040098': '발로란트',
-  '00040029': '피파 온라인',
-  '00040033': '메이플스토리',
-  '00040128': '로스트아크',
-  '00040136': '이터널 리턴',
-  '00040035': '스타크래프트',
-  '00130000': '토크/캠방',
-  '00150000': '먹방/쿡방',
-  '00160000': '스포츠',
-  '00180000': '뮤직',
-  '00190000': '여행/야외',
-};
-
-function getCategoryName(cateNo: string, rawName?: string): string {
-  if (rawName) return rawName;
-  return SOOP_CATEGORY_MAP[cateNo] || cateNo || 'Unknown';
-}
-
-// ============================================
-// 메인 수집 함수
+// 메인 수집
 // ============================================
 
 export async function collectSoop(): Promise<{
@@ -249,17 +175,30 @@ export async function collectSoop(): Promise<{
 }> {
   console.log('\n🔵 SOOP 수집 시작');
 
-  // 1. 전체 방송 목록 수집
   const rawBroads = await fetchAllBroadList();
   console.log(`  📊 총 ${rawBroads.length}개 방송 수집됨`);
 
+  // 첫 번째 방송의 필드를 로깅 (디버깅용)
+  if (rawBroads.length > 0) {
+    const sample = rawBroads[0];
+    console.log(`  🔍 샘플 데이터:`, JSON.stringify({
+      user_id: sample.user_id,
+      station_name: sample.station_name,
+      broad_title: sample.broad_title?.substring(0, 30),
+      total_view_cnt: sample.total_view_cnt,
+      pc_view_cnt: sample.pc_view_cnt,
+      m_current_view_cnt: sample.m_current_view_cnt,
+      broad_cate_name: sample.broad_cate_name,
+    }));
+  }
+
   if (rawBroads.length === 0) {
-    console.warn('  ⚠️ SOOP 수집 결과 없음 (API 변경 가능성)');
+    console.warn('  ⚠️ SOOP 수집 결과 없음');
     return { lives: [], categories: [], streamerInfos: [] };
   }
 
-  // 2. 중복 제거 (user_id 기준)
-  const uniqueMap = new Map<string, SoopBroadItem>();
+  // 중복 제거 (user_id 기준)
+  const uniqueMap = new Map<string, SoopRealBroad>();
   for (const broad of rawBroads) {
     if (broad.user_id && !uniqueMap.has(broad.user_id)) {
       uniqueMap.set(broad.user_id, broad);
@@ -268,37 +207,30 @@ export async function collectSoop(): Promise<{
   const uniqueBroads = Array.from(uniqueMap.values());
   console.log(`  🔄 중복 제거 후: ${uniqueBroads.length}개`);
 
-  // 3. LiveSnapshot 변환
+  // LiveSnapshot 변환
   const lives: LiveSnapshot[] = uniqueBroads.map(broad => {
-    const viewerCount = typeof broad.current_sum_viewer === 'string'
-      ? parseInt(broad.current_sum_viewer, 10) || 0
-      : broad.current_sum_viewer || 0;
-
-    const categoryName = getCategoryName(
-      broad.broad_cate_no || '',
-      broad.broad_cate_nm || broad.category_name
-    );
+    const viewerCount = parseViewerCount(broad);
 
     return {
       platform: 'soop' as const,
       platform_id: broad.user_id,
-      channel_name: broad.user_nick || broad.user_id,
+      channel_name: broad.station_name || broad.user_id,
       live_title: broad.broad_title,
-      category_id: broad.broad_cate_no || null,
-      category_name: categoryName,
+      category_id: null,
+      category_name: broad.broad_cate_name || 'Unknown',
       viewer_count: viewerCount,
-      accumulate_count: typeof broad.total_view_cnt === 'string'
-        ? parseInt(broad.total_view_cnt, 10) || 0
-        : (broad.total_view_cnt as number) || 0,
+      accumulate_count: 0,
       is_live: true,
       open_date: broad.broad_start || null,
       extra_data: {
         broadNo: broad.broad_no,
+        pcViewers: parseInt(String(broad.pc_view_cnt || '0'), 10) || 0,
+        mobileViewers: parseInt(String(broad.m_current_view_cnt || '0'), 10) || 0,
       },
     };
   });
 
-  // 4. 카테고리 집계
+  // 카테고리 집계
   const categoryMap = new Map<string, CategorySnapshot>();
   for (const live of lives) {
     const catKey = live.category_name || 'Unknown';
@@ -313,7 +245,7 @@ export async function collectSoop(): Promise<{
     } else {
       categoryMap.set(catKey, {
         platform: 'soop',
-        category_id: live.category_id,
+        category_id: null,
         category_name: catKey,
         live_count: 1,
         total_viewers: live.viewer_count,
@@ -324,16 +256,22 @@ export async function collectSoop(): Promise<{
   }
   const categories = Array.from(categoryMap.values());
 
-  // 5. 스트리머 정보 추출
+  // 스트리머 정보
   const streamerInfos = uniqueBroads.map(broad => ({
     platform: 'soop' as const,
     platform_id: broad.user_id,
-    channel_name: broad.user_nick || broad.user_id,
-    channel_image_url: broad.profile_image,
+    channel_name: broad.station_name || broad.user_id,
+    channel_image_url: undefined,
   }));
 
   const totalViewers = lives.reduce((sum, l) => sum + l.viewer_count, 0);
   console.log(`  📊 SOOP 결과: ${lives.length}개 라이브, ${categories.length}개 카테고리, 총 시청자 ${totalViewers.toLocaleString()}`);
+  
+  // 시청자수 상위 5개 출력 (디버깅)
+  const top5 = [...lives].sort((a, b) => b.viewer_count - a.viewer_count).slice(0, 5);
+  top5.forEach((l, i) => {
+    console.log(`    ${i+1}. ${l.channel_name} - ${l.category_name} (${l.viewer_count.toLocaleString()}명)`);
+  });
 
   return { lives, categories, streamerInfos };
 }
