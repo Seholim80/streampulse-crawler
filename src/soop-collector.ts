@@ -227,7 +227,7 @@ export async function collectSoop(): Promise<{
     return {
       platform: 'soop' as const,
       platform_id: broad.user_id,
-      channel_name: broad.station_name || broad.user_id,
+      channel_name: broad.user_nick || broad.station_name || broad.user_id,
       live_title: broad.broad_title,
       category_id: broad.broad_cate_no || null,
       category_name: broad.category_name || (broad.category_tags && broad.category_tags[0]) || 'Unknown',
@@ -273,7 +273,7 @@ export async function collectSoop(): Promise<{
   const streamerInfos = uniqueBroads.map(broad => ({
     platform: 'soop' as const,
     platform_id: broad.user_id,
-    channel_name: broad.station_name || broad.user_id,
+    channel_name: broad.user_nick || broad.station_name || broad.user_id,
     channel_image_url: undefined,
   }));
 
